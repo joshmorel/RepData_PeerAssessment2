@@ -1,0 +1,76 @@
+---
+title: "Health and Economic Costs of Severe Weather Events in the United States"
+author: "Josh Morel"
+date: "Friday, July 24, 2015"
+output: html_document
+---
+
+##Synopsis
+
+Severe weather events have significant costs to human health and the economy in the United States. But which are the most severe?
+
+Analysis of data from 2001 to 2011 found that the biggest impact was X in terms of human costs and Y in terms of economic costs.  
+ 
+##Data Processing
+
+The entire storm data set was extracted from the U.S. National Oceanic and Atmospheric Administartion's (NOAA) storm database.  Based on the beginning date of the event (end date was often empty), only the last ten years of data were selected as older data are incomplete - 2001 to 2011
+
+
+
+
+
+There should be a section titled Data Processing which describes (in words and code) how the data were loaded into R and processed for analysis. In particular, your analysis must start from the raw CSV file containing the data. You cannot do any preprocessing outside the document. If preprocessing is time-consuming you may consider using the cache = TRUE option for certain code chunks.
+
+
+```{r dataprocessing}
+
+library(ggplot2)
+library(dplyr)
+
+stormdata <- data.table(read.csv("StormData.csv.bz2"))
+
+
+##Remove entry with 2005 flood with 10 Billion dollars, more than three times cost of next greatest (Katrina) which is obviously data entry error. 
+
+stormdata2 <- stormdata %>% select(-REMARKS) %>%
+        mutate(eventyear=year(strptime(stormdata$BGN_DATE, "%m/%d/%Y"))
+               ,cropdamagedollars=ifelse(CROPDMGEXP=="B",CROPDMG*1000000000,ifelse(CROPDMGEXP=="M",CROPDMG*1000000,ifelse(CROPDMGEXP=="K",CROPDMG*1000,CROPDMG))),
+               propertydamagedollars=ifelse(PROPDMGEXP=="B",PROPDMG*1000000000,ifelse(PROPDMGEXP=="M",PROPDMG*1000000,ifelse(PROPDMGEXP=="K",PROPDMG*1000,PROPDMG))),
+               totaldamagedollarsthousand=round(propertydamagedollars+cropdamagedollars,0)) %>%
+        filter(eventyear >= 2001,totaldamagedollarsthousand<100000000)
+
+
+storms_by_event <- stormdata2 %>% group_by(EVTYPE) %>% summarise(count=n(),totalfatalities=sum(FATALITIES),totalinjuries=sum(INJURIES),totalpropdamage=sum(PROPDMG),totalcropdamage=sum(CROPDMGEXP))
+
+        
+
+```
+
+
+
+
+
+##Results
+
+There should be a section titled Results in which your results are presented.
+
+
+
+
+
+
+This is an R Markdown document. Markdown is a simple formatting syntax for authoring HTML, PDF, and MS Word documents. For more details on using R Markdown see <http://rmarkdown.rstudio.com>.
+
+When you click the **Knit** button a document will be generated that includes both content as well as the output of any embedded R code chunks within the document. You can embed an R code chunk like this:
+
+```{r}
+summary(cars)
+```
+
+You can also embed plots, for example:
+
+```{r, echo=FALSE}
+plot(cars)
+```
+
+Note that the `echo = FALSE` parameter was added to the code chunk to prevent printing of the R code that generated the plot.
