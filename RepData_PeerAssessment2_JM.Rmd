@@ -27,23 +27,28 @@ There should be a section titled Data Processing which describes (in words and c
 library(ggplot2)
 library(dplyr)
 
-stormdata <- data.table(read.csv("StormData.csv.bz2"))
+storms <- read.csv("StormData.csv.bz2")
 
+##Calculate totals and filter to include only ten years (most complete data), and remove entry with 2005 flood with 10 Billion dollars (more than three times cost of next greatest - Katrina - which is obviously data entry error)
 
-##Remove entry with 2005 flood with 10 Billion dollars, more than three times cost of next greatest (Katrina) which is obviously data entry error. 
+storms2 <- storms %>% select(-REMARKS) %>%
+        mutate(event.year=format(strptime(BGN_DATE, "%m/%d/%Y"),"%Y")
+               ,crop.damage.dollars=ifelse(CROPDMGEXP=="B",CROPDMG*1000000000,ifelse(CROPDMGEXP=="M",CROPDMG*1000000,ifelse(CROPDMGEXP=="K",CROPDMG*1000,CROPDMG))),
+               property.damage.dollars=ifelse(PROPDMGEXP=="B",PROPDMG*1000000000,ifelse(PROPDMGEXP=="M",PROPDMG*1000000,ifelse(PROPDMGEXP=="K",PROPDMG*1000,PROPDMG))),
+               total.damage.dollars.thousand=round((property.damage.dollars+crop.damage.dollars)/1000,0)) %>%
+        filter(event.year >= 2001,total.damage.dollars.thousand<100000000)
 
-stormdata2 <- stormdata %>% select(-REMARKS) %>%
-        mutate(eventyear=year(strptime(stormdata$BGN_DATE, "%m/%d/%Y"))
-               ,cropdamagedollars=ifelse(CROPDMGEXP=="B",CROPDMG*1000000000,ifelse(CROPDMGEXP=="M",CROPDMG*1000000,ifelse(CROPDMGEXP=="K",CROPDMG*1000,CROPDMG))),
-               propertydamagedollars=ifelse(PROPDMGEXP=="B",PROPDMG*1000000000,ifelse(PROPDMGEXP=="M",PROPDMG*1000000,ifelse(PROPDMGEXP=="K",PROPDMG*1000,PROPDMG))),
-               totaldamagedollarsthousand=round(propertydamagedollars+cropdamagedollars,0)) %>%
-        filter(eventyear >= 2001,totaldamagedollarsthousand<100000000)
+events.by.damage <- stormdata2 %>% group_by(EVTYPE) %>% summarise(total.damage.dollars.thousand=sum(total.damage.dollars.thousand)) %>% arrange(desc(total.damage.dollars.thousand))
 
+top.events.by.damage <- events.by.damage[1:10,]
 
-storms_by_event <- stormdata2 %>% group_by(EVTYPE) %>% summarise(count=n(),totalfatalities=sum(FATALITIES),totalinjuries=sum(INJURIES),totalpropdamage=sum(PROPDMG),totalcropdamage=sum(CROPDMGEXP))
+c <- ggplot(top.events.by.damage, aes(x=EVTYPE, y=top.events.by.damage))
 
-        
+c + geom_bar(stat="identity") + coord_flip()
 
+##qplot(top.events.by.damage$EVTYPE, top.events.by.damage$total.damage.dollars.thousand, geom="bar", stat="identity")
+
+storms_by_event <- stormdata2 %>% group_by(EVTYPE) %>% summarise(total.events=n(),total.casualties=sum(FATALITIES)+sum(INJURIES),total.damage.dollars.thousand=sum(total.damage.dollars.thousand))
 ```
 
 
