@@ -1,7 +1,6 @@
 ---
-title: "Health and Economic Costs of Severe Weather Events in the United States"
+title: "Health and Economic Costs of Severe Weather Events in the United States: 1996 to 2011"
 author: "Josh Morel"
-date: "Friday, July 24, 2015"
 output: html_document
 ---
 
@@ -9,73 +8,87 @@ output: html_document
 
 Severe weather events have significant costs to human health and the economy in the United States. But which are the most severe?
 
-Analysis of data from 2001 to 2011 found that the biggest impact was X in terms of human costs and Y in terms of economic costs.  
+Analysis of U.S. National Oceanic and Atmospheric Administartion's (NOAA) storm data from 1996 to 2011 found that tornandos have the biggest impact human health (recorded fatalities and injuries). 
+
+The same period data shows that hurricanes have the biggest economic cost (recorded property and crop damage combined).
  
 ##Data Processing
 
-The entire storm data set was extracted from the U.S. National Oceanic and Atmospheric Administartion's (NOAA) storm database.  Based on the beginning date of the event (end date was often empty), only the last ten years of data were selected as older data are incomplete - 2001 to 2011
+The U.S. National Oceanic and Atmospheric Administartion's (NOAA) storm data set for events from 1950 to November 2011 was download and loaded into R.  NOAA has been collecting all storm event type data since January 1996, so the data from January 1996 to November 2011 were included for analysis (on event beginning date). 
 
+Total economic damage was calculated as total property damage and total crop damage combined using the expense code to identify amount. 
 
+Some data cleaning was performed. Some substitutions of event type (e.g. "tstm wind" -> "thunderstorm wind", "thunderstorm wind" -> "thunderstorm wind") were done and an 2005 Flood in Napa valley, which was coded as having 115 billion dollars in damage, was removed from further analysis (upon review in the event remarks, this extreme value was obviously incorrect).
 
+For more information about the original data source, go the [Storm Events Database website](https://www.ncdc.noaa.gov/stormevents/).
 
-
-There should be a section titled Data Processing which describes (in words and code) how the data were loaded into R and processed for analysis. In particular, your analysis must start from the raw CSV file containing the data. You cannot do any preprocessing outside the document. If preprocessing is time-consuming you may consider using the cache = TRUE option for certain code chunks.
-
-
-```{r dataprocessing}
+```{r dataloading, cache=TRUE, message=FALSE}
 
 library(ggplot2)
 library(dplyr)
+library(reshape2)
 
+if(!file.exists("StormData.csv.bz2")) download.file("https://d396qusza40orc.cloudfront.net/repdata%2Fdata%2FStormData.csv.bz2","StormData.csv.bz2")
 storms <- read.csv("StormData.csv.bz2")
-
-##Calculate totals and filter to include only ten years (most complete data), and remove entry with 2005 flood with 10 Billion dollars (more than three times cost of next greatest - Katrina - which is obviously data entry error)
-
-storms2 <- storms %>% select(-REMARKS) %>%
-        mutate(event.year=format(strptime(BGN_DATE, "%m/%d/%Y"),"%Y")
-               ,crop.damage.dollars=ifelse(CROPDMGEXP=="B",CROPDMG*1000000000,ifelse(CROPDMGEXP=="M",CROPDMG*1000000,ifelse(CROPDMGEXP=="K",CROPDMG*1000,CROPDMG))),
-               property.damage.dollars=ifelse(PROPDMGEXP=="B",PROPDMG*1000000000,ifelse(PROPDMGEXP=="M",PROPDMG*1000000,ifelse(PROPDMGEXP=="K",PROPDMG*1000,PROPDMG))),
-               total.damage.dollars.thousand=round((property.damage.dollars+crop.damage.dollars)/1000,0)) %>%
-        filter(event.year >= 2001,total.damage.dollars.thousand<100000000)
-
-events.by.damage <- stormdata2 %>% group_by(EVTYPE) %>% summarise(total.damage.dollars.thousand=sum(total.damage.dollars.thousand)) %>% arrange(desc(total.damage.dollars.thousand))
-
-top.events.by.damage <- events.by.damage[1:10,]
-
-c <- ggplot(top.events.by.damage, aes(x=EVTYPE, y=top.events.by.damage))
-
-c + geom_bar(stat="identity") + coord_flip()
-
-##qplot(top.events.by.damage$EVTYPE, top.events.by.damage$total.damage.dollars.thousand, geom="bar", stat="identity")
-
-storms_by_event <- stormdata2 %>% group_by(EVTYPE) %>% summarise(total.events=n(),total.casualties=sum(FATALITIES)+sum(INJURIES),total.damage.dollars.thousand=sum(total.damage.dollars.thousand))
 ```
 
+```{r dataprocessing}
 
+##Calculate totals and filter to include only data after 1996 when all event types were captured
 
+storms <- select(storms,c(BGN_DATE,EVTYPE,FATALITIES,INJURIES,PROPDMG,PROPDMGEXP,CROPDMG,CROPDMGEXP)) 
+storms <- mutate(storms,event.year=format(strptime(BGN_DATE, "%m/%d/%Y"),"%Y"),event.type=tolower(EVTYPE))
+storms <- filter(storms,event.year >= 1996)
+
+##Calculate economic damage totals and remove entry with Napa Valley 2005 flood with over 100 Billion dollars damage coded (upon review of remarks in source file, this is obviously a mistake)
+
+storms <- mutate(storms,crop.damage.dollars=ifelse(CROPDMGEXP=="B",CROPDMG*1000000000,ifelse(CROPDMGEXP=="M",CROPDMG*1000000,ifelse(CROPDMGEXP=="K",CROPDMG*1000,CROPDMG))),
+                  property.damage.dollars=ifelse(PROPDMGEXP=="B",PROPDMG*1000000000,ifelse(PROPDMGEXP=="M",PROPDMG*1000000,ifelse(PROPDMGEXP=="K",PROPDMG*1000,PROPDMG))),
+                  total.damage.dollars=property.damage.dollars+crop.damage.dollars)
+storms <- filter(storms,total.damage.dollars<100000000000)
+
+##Summarize data by event type, then use substitution to better standardize event type element (need to apply grepl after summary due for performance considerations)
+
+events.summary <- storms %>% group_by(event.type) %>% summarise(total.casualties=sum(FATALITIES) + sum(INJURIES),total.fatalities=sum(FATALITIES),total.injuries=sum(INJURIES),total.damage.dollars.million=round(sum(total.damage.dollars)/1000000,2)) %>% filter(total.casualties>0 & total.damage.dollars.million>0) 
+
+events.summary <- mutate(events.summary,event.type.clean = ifelse(grepl("typhoon|hurricane",event.type),"hurricane",ifelse(grepl("storm surge",event.type),"storm surge/tide",ifelse(grepl("fire",event.type),"wildfire",ifelse(grepl("marine tstm|marine thunderstorm",event.type),"marine thunderstorm wind",ifelse(grepl("tstm|thunderstorm",event.type),"thunderstorm wind",event.type))))))
+
+events.summary <- events.summary %>% group_by(event.type.clean) %>% summarise(total.casualties=sum(total.casualties),total.fatalities=sum(total.fatalities),total.injuries=sum(total.injuries),total.damage.dollars.million=sum(total.damage.dollars.million))
+
+```
 
 
 ##Results
 
-There should be a section titled Results in which your results are presented.
+```{r resultshealth}
+options(scipen = 100)
 
+top.events.by.casualties <- events.summary %>% select(-total.damage.dollars.million) %>% arrange(desc(total.casualties))
 
+top.events.by.casualties <- melt(top.events.by.casualties[1:10,],id=c("event.type.clean","total.casualties"))
 
+g <- ggplot(top.events.by.casualties, aes(x=reorder(event.type.clean,total.casualties),y=value,fill=variable))
+                                          
 
+g + geom_bar(stat = "identity") + coord_flip() + ylab("Total Casualties (fatalities + injuries)") + xlab("Storm Event Type")+ labs(fill = "Casualty") + scale_fill_discrete(labels = c("Fatalities", "Injuries"))
 
-
-This is an R Markdown document. Markdown is a simple formatting syntax for authoring HTML, PDF, and MS Word documents. For more details on using R Markdown see <http://rmarkdown.rstudio.com>.
-
-When you click the **Knit** button a document will be generated that includes both content as well as the output of any embedded R code chunks within the document. You can embed an R code chunk like this:
-
-```{r}
-summary(cars)
 ```
+<br>
+<b>Figure 1:</b> Top Ten U.S. Storm Event Types by Human Casualties: 1996 to 2011
+<br>
 
-You can also embed plots, for example:
+The storm event type with the greatest impact to human health was `r top.events.by.casualties[1,]$event.type.clean`, with `r top.events.by.casualties[1,]$total.casualties`.
 
-```{r, echo=FALSE}
-plot(cars)
+```{r resultseconomic}
+
+top.events.by.damage <- arrange(events.summary,desc(total.damage.dollars.million))[1:10,]
+
+g <- ggplot(top.events.by.damage,aes(x=reorder(event.type.clean,total.damage.dollars.million),y=total.damage.dollars.million))
+
+g + geom_bar(stat = "identity") + coord_flip() + ylab("Total Damage ($ Million)") + xlab("Storm Event Type")
 ```
+<br>
+<b>Figure 2:</b> Top Ten U.S. Storm Event Types by Economic Damage to Property & Crops: 1996 to 2011
+<br>
 
-Note that the `echo = FALSE` parameter was added to the code chunk to prevent printing of the R code that generated the plot.
+The storm event type with the greatest impact to the economy was `r top.events.by.damage[1,]$event.type.clean`, with `r top.events.by.damage[1,]$total.damage.dollars.million` damage in millions of U.S. dollars to both propety and crops.
